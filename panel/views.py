@@ -16,7 +16,7 @@ from tempfile import NamedTemporaryFile
 from netaddr import IPAddress
 from _thread import start_new_thread
 from os import path, getcwd
-from libvirt import libvirtError
+import libvirt
 
 import panel.aplibvirt as aplibvirt
 import json
@@ -25,6 +25,9 @@ import json
 
 global virt_conn
 virt_conn = aplibvirt.connect()
+
+global virt_conn2
+virt_conn2 = libvirt.open("qemu:///system")
 
 # Create your views here.
 
@@ -127,7 +130,7 @@ def start_machine(request, machine_id):
         try:
             vm_state, vm_already_running = aplibvirt.startMachine(
                 virt_conn, vm_name)
-        except (libvirtError, Exception):
+        except (libvirt.libvirtError, Exception):
             return HttpResponse(status=400)
 
         if vm_already_running:
@@ -148,7 +151,7 @@ def stop_machine(request, machine_id):
         try:
             vm_state, vm_already_stopped = aplibvirt.stopMachine(
                 virt_conn, vm_name)
-        except (libvirtError, Exception):
+        except (libvirt.libvirtError, Exception):
             return HttpResponse(status=400)
 
         if vm_already_stopped:
@@ -548,15 +551,15 @@ def create_snapshot(vm_name):
 @login_required
 def deploy_vm(request):
 
-    cmd_stdout, cmd_stderr, cmd_code = aplibvirt.callCmd(
-        "sudo virsh net-list --all"
-    )
+    virsh_networks = [[
+        net.name(), 
+        "active" if net.isActive() == 1 else "inactive", 
+        str(net.autostart()),
+        str(net.isPersistent())
+    ] for net in virt_conn2.listAllNetworks()]
 
-    if not cmd_code:
-        virsh_networks = [x.split() for x in cmd_stdout.split("\n")[2:]]
-    else:
+    if len(virsh_networks) == 0:
         messages.error(request, "Could not retrieve virsh networks.")
-        virsh_networks = []
 
     if request.method == "POST":
         form = DeployVMForm(request.POST, networks=virsh_networks)
